@@ -1,5 +1,6 @@
 package hepl.grebac.acs;
 
+import hepl.caberg.tokenapp.Web.tokenRequestTemplate;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -43,18 +44,18 @@ public class AcsApplication {
 			try {
 				SSLSocket client = (SSLSocket) sslserversocket.accept();
 
-				var reader = GetBufferedReader(client);
+				var reader = new ObjectInputStream(client.getInputStream());
 				var writer = GetBufferedWriter(client);
 
-				String token = reader.readLine();
-				System.out.println("Received token: " + token);
+				var tokenRequest = (tokenRequestTemplate)reader.readObject();
+				System.out.println("Received token: " + tokenRequest);
 
 				if(isUserDataCorrect()) {
 					System.out.println("User data is correct");
 					writer.write("ACK\n");
 					writer.flush();
 
-					writer.write(giveUserToken(token) + "\n");
+					writer.write(giveUserToken(tokenRequest.getBankNumber() + tokenRequest.getDate()) + "\n");
 					writer.flush();
 				}
 				else {
@@ -66,7 +67,9 @@ public class AcsApplication {
 				client.close();
 			} catch (IOException e) {
 				throw new RuntimeException(e);
-			}
+			} catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            }
         }
 	}
 
