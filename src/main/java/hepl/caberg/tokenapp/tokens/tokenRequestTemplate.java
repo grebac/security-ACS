@@ -1,4 +1,4 @@
-package hepl.caberg.tokenapp.Web;
+package hepl.caberg.tokenapp.tokens;
 
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectOutputStream;

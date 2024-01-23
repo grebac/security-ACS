@@ -1,18 +1,22 @@
 package hepl.grebac.acs;
 
-import hepl.caberg.tokenapp.Web.tokenRequestTemplate;
+import hepl.caberg.tokenapp.tokens.tokenRequestTemplate;
+import hepl.grebac.acs.DB.DBHandler;
+import hepl.grebac.acs.encryption.KeyPairManager;
+import hepl.grebac.acs.encryption.SHA1RSASignatureMessage;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
 import java.io.*;
-import java.security.Security;
+import java.security.*;
 
 @SpringBootApplication
 public class AcsApplication {
+
+	public static DBHandler dbHandler = new DBHandler();
 
 	public static void main(String[] args) throws IOException {
 		Security.addProvider(new BouncyCastleProvider());
@@ -49,13 +53,21 @@ public class AcsApplication {
 
 				var tokenRequest = (tokenRequestTemplate)reader.readObject();
 				System.out.println("Received token: " + tokenRequest);
+				var signature = (byte[])reader.readObject();
+				System.out.println("Received signature: " + signature);
 
-				if(isUserDataCorrect()) {
+				var publicKeyName = dbHandler.getPublickeyByBankNumber(tokenRequest.getBankNumber());
+
+
+				if(publicKeyName != null && isSignatureCorrect(tokenRequest, signature, publicKeyName)) {
 					System.out.println("User data is correct");
+
 					writer.write("ACK\n");
 					writer.flush();
 
-					writer.write(giveUserToken(tokenRequest.getBankNumber() + tokenRequest.getDate()) + "\n");
+					var token = dbHandler.generateTokenForBanknumber(tokenRequest.getBankNumber());
+
+					writer.write(token + "\n");
 					writer.flush();
 				}
 				else {
@@ -82,10 +94,10 @@ public class AcsApplication {
 				var reader = GetBufferedReader(client);
 				var writer = GetBufferedWriter(client);
 
-				String msg =  reader.readLine();
-				System.out.println("Received message: " + msg);
+				String token =  reader.readLine();
+				System.out.println("Received message: " + token);
 
-				if (isTokenValid(new Token(msg))) {
+				if (isTokenValid(token)) {
 					System.out.println("Token is valid");
 					writer.write("ACK\n");
 				} else {
@@ -101,17 +113,21 @@ public class AcsApplication {
 		}
 	}
 
-	private static boolean isTokenValid(Token token) {
-		return false;
+	private static boolean isTokenValid(String token) {
+		return dbHandler.checkTokenValidity(token);
 	}
 
 
-	private static boolean isUserDataCorrect() {
-		return true;
-	}
+	private static boolean isSignatureCorrect(tokenRequestTemplate tokenRequestTemplate, byte[] signature, String publicKeyName) {
+		var keypairManager = new KeyPairManager(publicKeyName);
+		PublicKey publicKey = keypairManager.getKeyPair().getPublic();
 
-	private static String giveUserToken(String token) {
-		return "Updated : " + token;
+		SHA1RSASignatureMessage sha1RSASignatureMessage = new SHA1RSASignatureMessage(tokenRequestTemplate);
+		try {
+			return sha1RSASignatureMessage.verify(publicKey, signature);
+		} catch (NoSuchAlgorithmException | NoSuchProviderException | InvalidKeyException | SignatureException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	private static BufferedWriter GetBufferedWriter(SSLSocket sslsocket) throws IOException {
